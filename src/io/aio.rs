@@ -152,13 +152,6 @@ impl<C: AsyncWriteExt + AsyncReadExt + Unpin> TcpConnection<C> {
     pub async fn execute_pipeline(&mut self, pipeline: &Pipeline) -> ClientResult<Vec<Response>> {
         self.buf.clear();
         self.buf.push(b'P');
-        // query count
-        self.buf.extend(
-            itoa::Buffer::new()
-                .format(pipeline.query_count())
-                .as_bytes(),
-        );
-        self.buf.push(b'\n');
         // packet size
         self.buf
             .extend(itoa::Buffer::new().format(pipeline.buf().len()).as_bytes());
