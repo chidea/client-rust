@@ -155,7 +155,6 @@ impl<C: Write + Read> TcpConnection<C> {
         self.con.write_all(pipeline.buf())?;
         self.buf.clear();
         // read
-        let mut expected = Decoder::MIN_READBACK;
         let mut cursor = 0;
         let mut state = MRespState::default();
         loop {
@@ -164,15 +163,11 @@ impl<C: Write + Read> TcpConnection<C> {
             if n == 0 {
                 return Err(Error::IoError(std::io::ErrorKind::ConnectionReset.into()));
             }
-            if n < expected {
-                continue;
-            }
             self.buf.extend_from_slice(&buf[..n]);
             let mut decoder = Decoder::new(&self.buf, cursor);
-            match decoder.validate_pipe(cursor == 0, state) {
+            match decoder.validate_pipe(pipeline.query_count(), state) {
                 PipelineResult::Completed(r) => return Ok(r),
                 PipelineResult::Pending(_state) => {
-                    expected = 1;
                     cursor = decoder.position();
                     state = _state;
                 }
