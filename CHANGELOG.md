@@ -2,6 +2,12 @@
 
 All changes in this project will be noted in this file.
 
+### 0.9.0
+
+> **Minimum Supported Skytable Version**: 0.8.2
+
+- Added support for pipelines
+
 ### 0.8.6
 
 Reduced allocations in `Query`.

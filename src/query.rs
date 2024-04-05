@@ -157,7 +157,7 @@ impl Pipeline {
     ///
     /// Note: It's not possible to get the query back from the pipeline since it's not indexed (and doing so would be an unnecessary
     /// waste of space and time). That's why we take a reference which allows the caller to continue owning the [`Query`] item
-    pub fn add_query(&mut self, q: &Query) {
+    pub fn push(&mut self, q: &Query) {
         // qlen
         self.buf
             .extend(itoa::Buffer::new().format(q.q_window).as_bytes());
@@ -173,6 +173,22 @@ impl Pipeline {
         self.buf.extend(&q.buf);
         self.cnt += 1;
     }
+    /// Add a query to this pipeline (builder pattern)
+    ///
+    /// This is intended to be used with the
+    /// ["builder pattern"](https://rust-unofficial.github.io/patterns/patterns/creational/builder.html). For example:
+    /// ```
+    /// use skytable::{query, Pipeline};
+    ///
+    /// let pipeline = Pipeline::new()
+    ///     .add(&query!("create space myspace"))
+    ///     .add(&query!("drop space myspace"));
+    /// assert_eq!(pipeline.query_count(), 2);
+    /// ```
+    pub fn add(mut self, q: &Query) -> Self {
+        self.push(q);
+        self
+    }
 }
 
 impl<Q: AsRef<Query>, I> From<I> for Pipeline
@@ -181,22 +197,21 @@ where
 {
     fn from(iter: I) -> Self {
         let mut pipeline = Pipeline::new();
-        iter.into_iter()
-            .for_each(|q| pipeline.add_query(q.as_ref()));
+        iter.into_iter().for_each(|q| pipeline.push(q.as_ref()));
         pipeline
     }
 }
 
 impl<Q: AsRef<Query>> Extend<Q> for Pipeline {
     fn extend<T: IntoIterator<Item = Q>>(&mut self, iter: T) {
-        iter.into_iter().for_each(|q| self.add_query(q.as_ref()))
+        iter.into_iter().for_each(|q| self.push(q.as_ref()))
     }
 }
 
 impl<Q: AsRef<Query>> FromIterator<Q> for Pipeline {
     fn from_iter<T: IntoIterator<Item = Q>>(iter: T) -> Self {
         let mut pipe = Pipeline::new();
-        iter.into_iter().for_each(|q| pipe.add_query(q.as_ref()));
+        iter.into_iter().for_each(|q| pipe.push(q.as_ref()));
         pipe
     }
 }

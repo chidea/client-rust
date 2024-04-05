@@ -130,7 +130,7 @@ pub use {
         aio::{self, ConnectionAsync, ConnectionTlsAsync},
         sync::{self as syncio, Connection, ConnectionTls},
     },
-    query::Query,
+    query::{Pipeline, Query},
 };
 // private
 mod io;

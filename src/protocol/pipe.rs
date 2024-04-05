@@ -22,7 +22,7 @@ use {
     crate::response::Response,
 };
 
-const PIPELINE_EXCEPTION: u8 = 0xFF;
+const ILLEGAL_PACKET_ESCAPE: u8 = 0xFF;
 
 #[derive(Debug, PartialEq, Default)]
 pub(crate) struct MRespState {
@@ -47,7 +47,7 @@ impl MRespState {
             if decoder._cursor_eof() {
                 return PipelineResult::Pending(self);
             }
-            if decoder._cursor_value() == PIPELINE_EXCEPTION {
+            if decoder._cursor_value() == ILLEGAL_PACKET_ESCAPE {
                 return Self::except();
             }
             match decoder.validate_response(RState(
