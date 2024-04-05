@@ -2,9 +2,11 @@
 
 All changes in this project will be noted in this file.
 
-### 0.9.0
+### 0.9.0 (unreleased)
 
-> **Minimum Supported Skytable Version**: 0.8.2
+> - **Minimum Supported Skytable Version**: 0.8.2
+> - **Field change warnings**:
+>   - The `Config` struct now has two additional fields. This is not a breaking change because the functionality of the library remains unchanged
 
 - Added support for pipelines
 

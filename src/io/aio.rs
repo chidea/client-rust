@@ -85,17 +85,12 @@ impl DerefMut for ConnectionTlsAsync {
 impl Config {
     /// Establish an async connection to the database using the current configuration
     pub async fn connect_async(&self) -> ClientResult<ConnectionAsync> {
-        let mut tcpstream = TcpStream::connect((self.host(), self.port())).await?;
-        let handshake = ClientHandshake::new_v1(self);
-        tcpstream.write_all(handshake.inner()).await?;
-        let mut resp = [0u8; 4];
-        tcpstream.read_exact(&mut resp).await?;
-        match ServerHandshake::parse(resp)? {
-            ServerHandshake::Error(e) => return Err(ConnectionSetupError::HandshakeError(e).into()),
-            ServerHandshake::Okay(_suggestion) => {
-                return Ok(ConnectionAsync(TcpConnection::new(tcpstream)))
-            }
-        }
+        TcpStream::connect((self.host(), self.port()))
+            .await
+            .map(TcpConnection::new)?
+            ._handshake(self)
+            .await
+            .map(ConnectionAsync)
     }
     /// Establish an async TLS connection to the database using the current configuration.
     /// Pass the certificate in PEM format.
@@ -115,22 +110,15 @@ impl Config {
         let connector = builder.build().map_err(|e| {
             ConnectionSetupError::Other(format!("failed to set up TLS acceptor: {e}"))
         })?;
-        // init
-        let mut stream = TlsConnector::from(connector)
+        // init and handshake
+        TlsConnector::from(connector)
             .connect(self.host(), stream)
             .await
-            .map_err(|e| ConnectionSetupError::Other(format!("TLS handshake failed: {e}")))?;
-        // handshake
-        let handshake = ClientHandshake::new_v1(self);
-        stream.write_all(handshake.inner()).await?;
-        let mut resp = [0u8; 4];
-        stream.read_exact(&mut resp).await?;
-        match ServerHandshake::parse(resp)? {
-            ServerHandshake::Error(e) => return Err(ConnectionSetupError::HandshakeError(e).into()),
-            ServerHandshake::Okay(_suggestion) => {
-                return Ok(ConnectionTlsAsync(TcpConnection::new(stream)))
-            }
-        }
+            .map(TcpConnection::new)
+            .map_err(|e| ConnectionSetupError::Other(format!("TLS handshake failed: {e}")))?
+            ._handshake(self)
+            .await
+            .map(ConnectionTlsAsync)
     }
 }
 
@@ -146,6 +134,16 @@ impl<C: AsyncWriteExt + AsyncReadExt + Unpin> TcpConnection<C> {
         Self {
             con,
             buf: Vec::with_capacity(crate::BUFSIZE),
+        }
+    }
+    async fn _handshake(mut self, cfg: &Config) -> ClientResult<Self> {
+        let handshake = ClientHandshake::new(cfg);
+        self.con.write_all(handshake.inner()).await?;
+        let mut resp = [0u8; 4];
+        self.con.read_exact(&mut resp).await?;
+        match ServerHandshake::parse(resp)? {
+            ServerHandshake::Error(e) => return Err(ConnectionSetupError::HandshakeError(e).into()),
+            ServerHandshake::Okay(_suggestion) => return Ok(self),
         }
     }
     /// Execute a pipeline. The server returns the queries in the order they were sent (unless otherwise set).

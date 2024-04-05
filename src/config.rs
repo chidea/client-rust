@@ -30,6 +30,8 @@
 //! let mut db = Config::new("subnetx2_db1", 2008, "username", "password").connect().unwrap();
 //! ```
 
+pub use crate::protocol::handshake::ProtocolVersion;
+
 /// The default host
 ///
 /// NOTE: If you are using a clustering setup, don't use this!
@@ -46,21 +48,42 @@ pub struct Config {
     port: u16,
     username: Box<str>,
     password: Box<str>,
+    protocol: ProtocolVersion,
+    pub(crate) protocol_changed: bool,
 }
 
 impl Config {
+    fn _new(
+        host: Box<str>,
+        port: u16,
+        username: Box<str>,
+        password: Box<str>,
+        protocol: ProtocolVersion,
+    ) -> Self {
+        Self {
+            host,
+            port,
+            username,
+            password,
+            protocol,
+            protocol_changed: false,
+        }
+    }
     /// Create a new [`Config`] using the default connection settings and using the provided username and password
     pub fn new_default(username: &str, password: &str) -> Self {
         Self::new(DEFAULT_HOST, DEFAULT_TCP_PORT, username, password)
     }
-    /// Create a new [`Config`] using the given settings
+    /// Create a new [`Config`] using the given settings.
+    ///
+    /// **PROTOCOL VERSION**: Defaults to [`ProtocolVersion::V2_0`]
     pub fn new(host: &str, port: u16, username: &str, password: &str) -> Self {
-        Self {
-            host: host.into(),
+        Self::_new(
+            host.into(),
             port,
-            username: username.into(),
-            password: password.into(),
-        }
+            username.into(),
+            password.into(),
+            ProtocolVersion::V2_0,
+        )
     }
     /// Returns the host setting for this this configuration
     pub fn host(&self) -> &str {
@@ -77,5 +100,14 @@ impl Config {
     /// Returns the password set using this configuration
     pub fn password(&self) -> &str {
         self.password.as_ref()
+    }
+    /// Set the protocol
+    pub fn set_protocol(&mut self, protocol: ProtocolVersion) {
+        self.protocol_changed = true;
+        self.protocol = protocol;
+    }
+    /// Returns the protocol used for connections
+    pub fn protocol(&self) -> ProtocolVersion {
+        self.protocol
     }
 }
