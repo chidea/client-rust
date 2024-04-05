@@ -30,7 +30,7 @@
 //! let mut db = Config::new("subnetx2_db1", 2008, "username", "password").connect().unwrap();
 //! ```
 
-pub use crate::protocol::handshake::ProtocolVersion;
+use crate::protocol::handshake::ProtocolVersion;
 
 /// The default host
 ///
@@ -48,8 +48,7 @@ pub struct Config {
     port: u16,
     username: Box<str>,
     password: Box<str>,
-    protocol: ProtocolVersion,
-    pub(crate) protocol_changed: bool,
+    pub(crate) protocol: ProtocolVersion,
 }
 
 impl Config {
@@ -66,7 +65,6 @@ impl Config {
             username,
             password,
             protocol,
-            protocol_changed: false,
         }
     }
     /// Create a new [`Config`] using the default connection settings and using the provided username and password
@@ -100,14 +98,5 @@ impl Config {
     /// Returns the password set using this configuration
     pub fn password(&self) -> &str {
         self.password.as_ref()
-    }
-    /// Set the protocol
-    pub fn set_protocol(&mut self, protocol: ProtocolVersion) {
-        self.protocol_changed = true;
-        self.protocol = protocol;
-    }
-    /// Returns the protocol used for connections
-    pub fn protocol(&self) -> ProtocolVersion {
-        self.protocol
     }
 }

@@ -22,7 +22,7 @@ use crate::{
 #[derive(Debug, PartialEq, Clone, Copy)]
 #[repr(u8)]
 /// The Skyhash protocol version
-pub enum ProtocolVersion {
+pub(crate) enum ProtocolVersion {
     /// Skyhash 2.0
     V2_0,
 }
@@ -38,7 +38,7 @@ impl ProtocolVersion {
 pub struct ClientHandshake(Box<[u8]>);
 impl ClientHandshake {
     pub(crate) fn new(cfg: &Config) -> Self {
-        Self::_new(cfg.protocol().hs_block(), cfg)
+        Self::_new(cfg.protocol.hs_block(), cfg)
     }
     fn _new(hs: [u8; 6], cfg: &Config) -> Self {
         let mut v = Vec::with_capacity(6 + cfg.username().len() + cfg.password().len() + 5);
