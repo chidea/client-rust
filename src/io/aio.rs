@@ -24,7 +24,12 @@
 use {
     crate::{
         error::{ClientResult, ConnectionSetupError, Error},
-        protocol::{ClientHandshake, DecodeState, Decoder, RState, ServerHandshake},
+        protocol::{
+            handshake::{ClientHandshake, ServerHandshake},
+            state_init::{DecodeState, MRespState, PipelineResult, RState},
+            Decoder,
+        },
+        query::Pipeline,
         response::{FromResponse, Response},
         Config, Query,
     },
@@ -80,17 +85,12 @@ impl DerefMut for ConnectionTlsAsync {
 impl Config {
     /// Establish an async connection to the database using the current configuration
     pub async fn connect_async(&self) -> ClientResult<ConnectionAsync> {
-        let mut tcpstream = TcpStream::connect((self.host(), self.port())).await?;
-        let handshake = ClientHandshake::new(self);
-        tcpstream.write_all(handshake.inner()).await?;
-        let mut resp = [0u8; 4];
-        tcpstream.read_exact(&mut resp).await?;
-        match ServerHandshake::parse(resp)? {
-            ServerHandshake::Error(e) => return Err(ConnectionSetupError::HandshakeError(e).into()),
-            ServerHandshake::Okay(_suggestion) => {
-                return Ok(ConnectionAsync(TcpConnection::new(tcpstream)))
-            }
-        }
+        TcpStream::connect((self.host(), self.port()))
+            .await
+            .map(TcpConnection::new)?
+            ._handshake(self)
+            .await
+            .map(ConnectionAsync)
     }
     /// Establish an async TLS connection to the database using the current configuration.
     /// Pass the certificate in PEM format.
@@ -110,22 +110,15 @@ impl Config {
         let connector = builder.build().map_err(|e| {
             ConnectionSetupError::Other(format!("failed to set up TLS acceptor: {e}"))
         })?;
-        // init
-        let mut stream = TlsConnector::from(connector)
+        // init and handshake
+        TlsConnector::from(connector)
             .connect(self.host(), stream)
             .await
-            .map_err(|e| ConnectionSetupError::Other(format!("TLS handshake failed: {e}")))?;
-        // handshake
-        let handshake = ClientHandshake::new(self);
-        stream.write_all(handshake.inner()).await?;
-        let mut resp = [0u8; 4];
-        stream.read_exact(&mut resp).await?;
-        match ServerHandshake::parse(resp)? {
-            ServerHandshake::Error(e) => return Err(ConnectionSetupError::HandshakeError(e).into()),
-            ServerHandshake::Okay(_suggestion) => {
-                return Ok(ConnectionTlsAsync(TcpConnection::new(stream)))
-            }
-        }
+            .map(TcpConnection::new)
+            .map_err(|e| ConnectionSetupError::Other(format!("TLS handshake failed: {e}")))?
+            ._handshake(self)
+            .await
+            .map(ConnectionTlsAsync)
     }
 }
 
@@ -141,6 +134,49 @@ impl<C: AsyncWriteExt + AsyncReadExt + Unpin> TcpConnection<C> {
         Self {
             con,
             buf: Vec::with_capacity(crate::BUFSIZE),
+        }
+    }
+    async fn _handshake(mut self, cfg: &Config) -> ClientResult<Self> {
+        let handshake = ClientHandshake::new(cfg);
+        self.con.write_all(handshake.inner()).await?;
+        let mut resp = [0u8; 4];
+        self.con.read_exact(&mut resp).await?;
+        match ServerHandshake::parse(resp)? {
+            ServerHandshake::Error(e) => return Err(ConnectionSetupError::HandshakeError(e).into()),
+            ServerHandshake::Okay(_suggestion) => return Ok(self),
+        }
+    }
+    /// Execute a pipeline. The server returns the queries in the order they were sent (unless otherwise set).
+    pub async fn execute_pipeline(&mut self, pipeline: &Pipeline) -> ClientResult<Vec<Response>> {
+        self.buf.clear();
+        self.buf.push(b'P');
+        // packet size
+        self.buf
+            .extend(itoa::Buffer::new().format(pipeline.buf().len()).as_bytes());
+        self.buf.push(b'\n');
+        // write
+        self.con.write_all(&self.buf).await?;
+        self.con.write_all(pipeline.buf()).await?;
+        self.buf.clear();
+        // read
+        let mut cursor = 0;
+        let mut state = MRespState::default();
+        loop {
+            let mut buf = [0u8; crate::BUFSIZE];
+            let n = self.con.read(&mut buf).await?;
+            if n == 0 {
+                return Err(Error::IoError(std::io::ErrorKind::ConnectionReset.into()));
+            }
+            self.buf.extend_from_slice(&buf[..n]);
+            let mut decoder = Decoder::new(&self.buf, cursor);
+            match decoder.validate_pipe(pipeline.query_count(), state) {
+                PipelineResult::Completed(r) => return Ok(r),
+                PipelineResult::Pending(_state) => {
+                    cursor = decoder.position();
+                    state = _state;
+                }
+                PipelineResult::Error(e) => return Err(e.into()),
+            }
         }
     }
     /// Run a query and return a raw [`Response`]

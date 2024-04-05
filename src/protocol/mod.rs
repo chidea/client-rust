@@ -14,11 +14,24 @@
  * limitations under the License.
 */
 
-use crate::{
-    config::Config,
-    error::{ClientResult, ConnectionSetupError, Error},
-    response::{Response, Row, Value},
+pub mod handshake;
+mod pipe;
+mod state;
+
+use {
+    self::state::{
+        DecodeState, MetaState, MultiRowState, PendingValue, RState, ResponseState, RowState,
+        ValueDecodeState, ValueDecodeStateAny, ValueDecodeStateRaw, ValueState, ValueStateMeta,
+    },
+    crate::response::{Response, Row, Value},
 };
+
+pub mod state_init {
+    pub(crate) use super::{
+        pipe::{MRespState, PipelineResult},
+        state::{DecodeState, RState},
+    };
+}
 
 pub(crate) type ProtocolResult<T> = Result<T, ProtocolError>;
 
@@ -30,6 +43,7 @@ pub enum ProtocolError {
     /// The server possibly returned an unknown data type and we can't decode it. Note that this might happen when you use an older client version with
     /// a newer version of Skytable
     InvalidServerResponseUnknownDataType,
+    InvalidPacket,
 }
 
 impl Value {
@@ -38,119 +52,6 @@ impl Value {
             Self::UInt64(u) => u,
             _ => unreachable!(),
         }
-    }
-}
-
-/*
-    Decode state management
-*/
-
-type ValueDecodeStateRaw = ValueDecodeStateAny<ValueState>;
-type ValueDecodeState = ValueDecodeStateAny<PendingValue>;
-
-#[derive(Debug, PartialEq)]
-enum ValueDecodeStateAny<P, V = Value> {
-    Pending(P),
-    Decoded(V),
-}
-
-#[derive(Debug, PartialEq)]
-struct ValueState {
-    v: Value,
-    meta: ValueStateMeta,
-}
-
-impl ValueState {
-    fn new(v: Value, meta: ValueStateMeta) -> Self {
-        Self { v, meta }
-    }
-}
-
-#[derive(Debug, PartialEq)]
-struct ValueStateMeta {
-    start: usize,
-    md1: u64,
-    md1_flag: bool,
-}
-
-impl ValueStateMeta {
-    fn zero() -> Self {
-        Self {
-            start: 0,
-            md1: 0,
-            md1_flag: false,
-        }
-    }
-    fn new(start: usize, md1: u64, md1_flag: bool) -> Self {
-        Self {
-            start,
-            md1,
-            md1_flag,
-        }
-    }
-}
-
-#[derive(Debug, PartialEq)]
-struct RowState {
-    meta: ValueStateMeta,
-    row: Vec<Value>,
-    tmp: Option<PendingValue>,
-}
-
-impl RowState {
-    fn new(meta: ValueStateMeta, row: Vec<Value>, tmp: Option<PendingValue>) -> Self {
-        Self { meta, row, tmp }
-    }
-}
-
-#[derive(Debug, PartialEq)]
-struct MultiRowState {
-    c_row: Option<RowState>,
-    rows: Vec<Row>,
-    md_state: u8,
-    md1_target: u64,
-    md2_col_cnt: u64,
-}
-
-impl Default for MultiRowState {
-    fn default() -> Self {
-        Self::new(None, vec![], 0, 0, 0)
-    }
-}
-
-impl MultiRowState {
-    fn new(c_row: Option<RowState>, rows: Vec<Row>, md_s: u8, md_cnt: u64, md_target: u64) -> Self {
-        Self {
-            c_row,
-            rows,
-            md_state: md_s,
-            md1_target: md_target,
-            md2_col_cnt: md_cnt,
-        }
-    }
-}
-
-#[derive(Debug, PartialEq)]
-enum ResponseState {
-    Initial,
-    PValue(PendingValue),
-    PError,
-    PRow(RowState),
-    PMultiRow(MultiRowState),
-}
-
-#[derive(Debug, PartialEq)]
-pub enum DecodeState {
-    ChangeState(RState),
-    Completed(Response),
-    Error(ProtocolError),
-}
-
-#[derive(Debug, PartialEq)]
-pub struct RState(ResponseState);
-impl Default for RState {
-    fn default() -> Self {
-        RState(ResponseState::Initial)
     }
 }
 
@@ -215,23 +116,14 @@ impl<'a> Decoder<'a> {
         }
     }
     fn resume_row(&mut self, mut row_state: RowState) -> DecodeState {
-        if !row_state.meta.md1_flag {
-            match self.__resume_decode(row_state.meta.md1, ValueStateMeta::zero()) {
-                Ok(ValueDecodeStateAny::Pending(ValueState { v, .. })) => {
-                    row_state.meta.md1 = v.u64();
-                    return DecodeState::ChangeState(RState(ResponseState::PRow(row_state)));
-                }
-                Ok(ValueDecodeStateAny::Decoded(v)) => {
-                    row_state.meta.md1 = v.u64();
-                    row_state.meta.md1_flag = true;
-                }
-                Err(e) => return DecodeState::Error(e),
-            }
+        match row_state.meta.md.finished(self) {
+            Ok(true) => self._decode_row_core(row_state),
+            Ok(false) => DecodeState::ChangeState(RState(ResponseState::PRow(row_state))),
+            Err(e) => DecodeState::Error(e),
         }
-        self._decode_row_core(row_state)
     }
     fn _decode_row_core(&mut self, mut row_state: RowState) -> DecodeState {
-        while row_state.row.len() as u64 != row_state.meta.md1 {
+        while row_state.row.len() as u64 != row_state.meta.md.val() {
             let r = match row_state.tmp.take() {
                 None => {
                     if self._cursor_eof() {
@@ -262,32 +154,19 @@ impl<'a> Decoder<'a> {
         DecodeState::Completed(Response::Row(Row::new(row_state.row)))
     }
     fn resume_rows(&mut self, mut multirow: MultiRowState) -> DecodeState {
-        if multirow.md_state == 0 {
-            match self.__resume_decode(multirow.md1_target, ValueStateMeta::zero()) {
-                Ok(ValueDecodeStateAny::Pending(ValueState { v, .. })) => {
-                    multirow.md1_target = v.u64();
-                    return DecodeState::ChangeState(RState(ResponseState::PMultiRow(multirow)));
+        macro_rules! finish {
+            ($completed:expr, $target:expr) => {
+                match MetaState::try_finish(self, $completed, &mut $target) {
+                    Ok(true) => multirow.md_state += 1,
+                    Ok(false) => {
+                        return DecodeState::ChangeState(RState(ResponseState::PMultiRow(multirow)))
+                    }
+                    Err(e) => return DecodeState::Error(e),
                 }
-                Ok(ValueDecodeStateAny::Decoded(v)) => {
-                    multirow.md1_target = v.u64();
-                    multirow.md_state += 1;
-                }
-                Err(e) => return DecodeState::Error(e),
-            }
+            };
         }
-        if multirow.md_state == 1 {
-            match self.__resume_decode(multirow.md2_col_cnt, ValueStateMeta::zero()) {
-                Ok(ValueDecodeStateAny::Pending(ValueState { v, .. })) => {
-                    multirow.md2_col_cnt = v.u64();
-                    return DecodeState::ChangeState(RState(ResponseState::PMultiRow(multirow)));
-                }
-                Ok(ValueDecodeStateAny::Decoded(v)) => {
-                    multirow.md2_col_cnt = v.u64();
-                    multirow.md_state += 1;
-                }
-                Err(e) => return DecodeState::Error(e),
-            }
-        }
+        finish!(multirow.md_state == 1, &mut multirow.md1_target);
+        finish!(multirow.md_state == 2, &mut multirow.md2_col_cnt);
         while multirow.rows.len() as u64 != multirow.md1_target {
             let ret = match multirow.c_row.take() {
                 Some(r) => self._decode_row_core(r),
@@ -324,6 +203,7 @@ impl<'a> Decoder<'a> {
         }
         let lf = self._creq(b'\n');
         self._cursor_incr_if(lf);
+        // FIXME(@ohsayan): the below is not exactly necessary and we can actually remove this if it complicates state management
         okay &= !(lf & (self._cursor() == meta.start));
         if okay & lf {
             let start = meta.start;
@@ -342,32 +222,23 @@ impl<'a> Decoder<'a> {
         &mut self,
         mut meta: ValueStateMeta,
     ) -> ProtocolResult<ValueDecodeStateRaw> {
-        if !meta.md1_flag {
-            match self.__resume_decode(meta.md1, ValueStateMeta::zero())? {
-                ValueDecodeStateAny::Decoded(s) => {
-                    let s = s.u64();
-                    meta.md1_flag = true;
-                    meta.md1 = s;
-                }
-                ValueDecodeStateAny::Pending(ValueState { v, .. }) => {
-                    meta.md1 = v.u64();
-                    return Ok(ValueDecodeStateRaw::Pending(ValueState::new(
-                        T::empty(),
-                        meta,
-                    )));
-                }
-            }
-        }
-        meta.start = self._cursor();
-        if self._remaining() as u64 >= meta.md1 {
-            let buf = &self.b[meta.start..self._cursor() + meta.md1 as usize];
-            self._cursor_incr_by(meta.md1 as usize);
-            T::finish(buf).map(ValueDecodeStateAny::Decoded)
-        } else {
-            Ok(ValueDecodeStateAny::Pending(ValueState::new(
+        if !meta.md.finished(self)? {
+            Ok(ValueDecodeStateRaw::Pending(ValueState::new(
                 T::empty(),
                 meta,
             )))
+        } else {
+            meta.start = self._cursor();
+            if self._remaining() as u64 >= meta.md.val() {
+                let buf = &self.b[meta.start..self._cursor() + meta.md.val() as usize];
+                self._cursor_incr_by(meta.md.val() as usize);
+                T::finish(buf).map(ValueDecodeStateAny::Decoded)
+            } else {
+                Ok(ValueDecodeStateAny::Pending(ValueState::new(
+                    T::empty(),
+                    meta,
+                )))
+            }
         }
     }
 }
@@ -401,6 +272,9 @@ impl<'a> Decoder<'a> {
     }
     fn _creq(&self, b: u8) -> bool {
         (self.b[core::cmp::min(self.i, self.b.len() - 1)] == b) & !self._cursor_eof()
+    }
+    fn _current(&self) -> &[u8] {
+        &self.b[self.i..]
     }
 }
 
@@ -474,23 +348,6 @@ impl_fstr!(
     f64 as Float64
 );
 
-#[derive(Debug, PartialEq)]
-struct PendingValue {
-    state: ValueState,
-    tmp: Option<ValueState>,
-    stack: Vec<(Vec<Value>, ValueStateMeta)>,
-}
-
-impl PendingValue {
-    fn new(
-        state: ValueState,
-        tmp: Option<ValueState>,
-        stack: Vec<(Vec<Value>, ValueStateMeta)>,
-    ) -> Self {
-        Self { state, tmp, stack }
-    }
-}
-
 impl<'a> Decoder<'a> {
     fn parse_list(
         &mut self,
@@ -499,24 +356,14 @@ impl<'a> Decoder<'a> {
     ) -> ProtocolResult<ValueDecodeStateAny<PendingValue, Value>> {
         let (mut current_list, mut current_meta) = stack.pop().unwrap();
         loop {
-            if !current_meta.md1_flag {
-                match self.__resume_decode(current_meta.md1, ValueStateMeta::zero())? {
-                    ValueDecodeStateAny::Decoded(v) => {
-                        current_meta.md1 = v.u64();
-                        current_meta.md1_flag = true;
-                    }
-                    ValueDecodeStateAny::Pending(ValueState { v, .. }) => {
-                        current_meta.md1 = v.u64();
-                        stack.push((current_list, current_meta));
-                        return Ok(ValueDecodeStateAny::Pending(PendingValue::new(
-                            ValueState::new(Value::List(vec![]), ValueStateMeta::zero()),
-                            None,
-                            stack,
-                        )));
-                    }
-                }
+            if !current_meta.md.finished(self)? {
+                return Ok(ValueDecodeStateAny::Pending(PendingValue::new(
+                    ValueState::new(Value::List(vec![]), ValueStateMeta::zero()),
+                    None,
+                    stack,
+                )));
             }
-            if current_list.len() as u64 == current_meta.md1 {
+            if current_list.len() as u64 == current_meta.md.val() {
                 match stack.pop() {
                     None => {
                         return Ok(ValueDecodeStateAny::Decoded(Value::List(current_list)));
@@ -667,59 +514,24 @@ impl<'a> Decoder<'a> {
     }
 }
 
-pub struct ClientHandshake(Box<[u8]>);
-impl ClientHandshake {
-    pub(crate) fn new(cfg: &Config) -> Self {
-        let mut v = Vec::with_capacity(6 + cfg.username().len() + cfg.password().len() + 5);
-        v.extend(b"H\x00\x00\x00\x00\x00");
-        pushlen!(v, cfg.username().len());
-        pushlen!(v, cfg.password().len());
-        v.extend(cfg.username().as_bytes());
-        v.extend(cfg.password().as_bytes());
-        Self(v.into_boxed_slice())
-    }
-    pub(crate) fn inner(&self) -> &[u8] {
-        &self.0
-    }
-}
-
-#[derive(Debug)]
-pub enum ServerHandshake {
-    Okay(u8),
-    Error(u8),
-}
-impl ServerHandshake {
-    pub fn parse(v: [u8; 4]) -> ClientResult<Self> {
-        Ok(match v {
-            [b'H', 0, 0, msg] => Self::Okay(msg),
-            [b'H', 0, 1, msg] => Self::Error(msg),
-            _ => {
-                return Err(Error::ConnectionSetupErr(
-                    ConnectionSetupError::InvalidServerHandshake,
-                ))
-            }
-        })
-    }
-}
-
-#[test]
-fn t_row() {
-    let mut decoder = Decoder::new(b"\x115\n\x00\x01\x01\x0D5\nsayan\x0220\n\x0E0\n", 0);
-    assert_eq!(
-        decoder.validate_response(RState::default()),
-        DecodeState::Completed(Response::Row(Row::new(vec![
-            Value::Null,
-            Value::Bool(true),
-            Value::String("sayan".into()),
-            Value::UInt8(20),
-            Value::List(vec![])
-        ])))
-    );
-}
-
 #[test]
 fn t_mrow() {
-    let mut decoder = Decoder::new(b"\x133\n5\n\x00\x01\x01\x0D5\nsayan\x0220\n\x0E0\n\x00\x01\x01\x0D5\nelana\x0221\n\x0E0\n\x00\x01\x01\x0D5\nemily\x0222\n\x0E0\n", 0);
+    const MROW_QUERY: &[u8] = b"\x133\n5\n\x00\x01\x01\x0D5\nsayan\x0220\n\x0E0\n\x00\x01\x01\x0D5\nelana\x0221\n\x0E0\n\x00\x01\x01\x0D5\nemily\x0222\n\x0E0\n";
+    for i in 1..MROW_QUERY.len() {
+        let mut decoder = Decoder::new(&MROW_QUERY[..i], 0);
+        if i == 1 {
+            assert!(matches!(
+                decoder.validate_response(RState::default()),
+                DecodeState::ChangeState(RState(_))
+            ));
+        } else {
+            assert!(matches!(
+                decoder.validate_response(RState::default()),
+                DecodeState::ChangeState(RState(ResponseState::PMultiRow(_)))
+            ));
+        }
+    }
+    let mut decoder = Decoder::new(MROW_QUERY, 0);
     assert_eq!(
         decoder.validate_response(RState::default()),
         DecodeState::Completed(Response::Rows(vec![
@@ -745,5 +557,33 @@ fn t_mrow() {
                 Value::List(vec![])
             ])
         ]))
+    );
+}
+#[test]
+fn t_num() {
+    const NUM: &[u8] = b"1234\n";
+    fn decoder(i: usize) -> Decoder<'static> {
+        Decoder::new(&NUM[..i], 0)
+    }
+    for (i, expected) in [1, 12, 123, 1234u64]
+        .iter()
+        .enumerate()
+        .map(|(a, b)| (a + 1, *b))
+    {
+        assert_eq!(
+            decoder(i)
+                .__resume_decode(0u64, ValueStateMeta::zero())
+                .unwrap(),
+            ValueDecodeStateAny::Pending(ValueState::new(
+                Value::UInt64(expected),
+                ValueStateMeta::zero()
+            ))
+        );
+    }
+    assert_eq!(
+        decoder(NUM.len())
+            .__resume_decode(0u64, ValueStateMeta::zero())
+            .unwrap(),
+        ValueDecodeStateAny::Decoded(Value::UInt64(1234))
     );
 }

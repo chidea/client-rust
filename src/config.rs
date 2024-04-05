@@ -15,20 +15,22 @@
 */
 
 //! # Configuration
-//! 
+//!
 //! This module provides items to help with database connection setup and configuration.
-//! 
+//!
 //! ## Example
-//! 
+//!
 //! ```no_run
 //! use skytable::Config;
-//! 
+//!
 //! // establish a sync connection to 127.0.0.1:2003
 //! let mut db = Config::new_default("username", "password").connect().unwrap();
-//! 
+//!
 //! // establish a connection to a specific host `subnetx2_db1` and port `2008`
 //! let mut db = Config::new("subnetx2_db1", 2008, "username", "password").connect().unwrap();
 //! ```
+
+use crate::protocol::handshake::ProtocolVersion;
 
 /// The default host
 ///
@@ -46,21 +48,40 @@ pub struct Config {
     port: u16,
     username: Box<str>,
     password: Box<str>,
+    pub(crate) protocol: ProtocolVersion,
 }
 
 impl Config {
+    fn _new(
+        host: Box<str>,
+        port: u16,
+        username: Box<str>,
+        password: Box<str>,
+        protocol: ProtocolVersion,
+    ) -> Self {
+        Self {
+            host,
+            port,
+            username,
+            password,
+            protocol,
+        }
+    }
     /// Create a new [`Config`] using the default connection settings and using the provided username and password
     pub fn new_default(username: &str, password: &str) -> Self {
         Self::new(DEFAULT_HOST, DEFAULT_TCP_PORT, username, password)
     }
-    /// Create a new [`Config`] using the given settings
+    /// Create a new [`Config`] using the given settings.
+    ///
+    /// **PROTOCOL VERSION**: Defaults to [`ProtocolVersion::V2_0`]
     pub fn new(host: &str, port: u16, username: &str, password: &str) -> Self {
-        Self {
-            host: host.into(),
+        Self::_new(
+            host.into(),
             port,
-            username: username.into(),
-            password: password.into(),
-        }
+            username.into(),
+            password.into(),
+            ProtocolVersion::V2_0,
+        )
     }
     /// Returns the host setting for this this configuration
     pub fn host(&self) -> &str {
