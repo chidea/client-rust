@@ -2,7 +2,7 @@
 
 ## Introduction
 
-This library is the official client for the free and open-source NoSQL database [Skytable](https://github.com/skytable/skytable). First, go ahead and install Skytable by following the instructions [here](https://docs.skytable.io/getting-started). This library supports all Skytable versions that work with the [Skyhash 2 Protocol](https://docs.skytable.io/protocol/overview). This version of the library was tested with the latest Skytable release (release [0.8.1](https://github.com/skytable/skytable/releases/v0.8.1)).
+This library is the official client for the free and open-source NoSQL database [Skytable](https://github.com/skytable/skytable). First, go ahead and install Skytable by following the instructions [here](https://docs.skytable.io/getting-started). This library supports all Skytable versions that work with the [Skyhash 2 Protocol](https://docs.skytable.io/protocol/overview). This version of the library was tested with the latest Skytable release (release [0.8.1](https://github.com/skytable/skytable/releases/v0.8.1)). [Read more about supported versions here](#version-support).
 
 ## Definitive example
 
@@ -53,6 +53,12 @@ assert_eq!(user, our_user);
 
 > **Read [docs here to learn BlueQL](https://docs.skytable.io/)**
 
+
+## Version support
+
+- Minimum Supported Rust Version (MSRV): 1.51.0
+- Minimum Supported Skytable Version: 0.8.0
+
 ## Features
 
 - Sync API
@@ -64,8 +70,8 @@ assert_eq!(user, our_user);
 
 ## Contributing
 
-Open-source, and contributions ... &mdash; they're always welcome! For ideas and suggestions, [create an issue on GitHub](https://github.com/skytable/client-rust/issues/new) and for patches, fork and open those pull requests [here](https://github.com/skytable/client-rust)!
+Contributions are always welcome. To submit patches please fork this repository and submit a pull request. If you find any bugs, [please open an issue here](https://github.com/skytable/client-rust/issues/new).
 
 ## License
 
-This client library is distributed under the permissive [Apache-2.0 License](https://github.com/skytable/client-rust/blob/next/LICENSE). Now go build great apps!
+This library is distributed under the [Apache-2.0 License](https://github.com/skytable/client-rust/blob/next/LICENSE).
