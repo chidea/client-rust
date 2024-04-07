@@ -133,6 +133,13 @@ pub enum Response {
     Error(u16),
 }
 
+impl Response {
+    /// Attempt to convert the response into the given type
+    pub fn parse<T: FromResponse>(self) -> ClientResult<T> {
+        T::from_response(self)
+    }
+}
+
 /*
     Response traits
 */

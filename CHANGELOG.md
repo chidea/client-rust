@@ -4,11 +4,13 @@ All changes in this project will be noted in this file.
 
 ### 0.8.7 (unreleased)
 
-> **BREAKING PATCH DUE TO MINIMUM VERSION UPGRADE**
-> - **Minimum Supported Skytable Version**: 0.8.2
 > - **Field change warnings**:
 >   - The `Config` struct now has one additional field. This is not a breaking change because the functionality of the library remains unchanged
+
+#### Additions
+
 - Added support for pipelines
+- Added `Response::parse` to convert a response into compatible types
 
 ### 0.8.6
 
