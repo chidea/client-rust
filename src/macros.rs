@@ -44,3 +44,20 @@ macro_rules! pushlen {
         $buf.push(b'\n');
     }};
 }
+
+#[macro_export]
+/// The `pipe!` macro is used to create pipelines
+///
+/// ## Example usage
+/// ```
+/// use skytable::{pipe, query};
+///
+/// let pipe = pipe!(query!("sysctl report status"), query!("use $current"));
+/// assert_eq!(pipe.query_count(), 2);
+/// ```
+macro_rules! pipe {
+    ($($query:expr),+) => {{
+        let mut p = $crate::Pipeline::new();
+        $(p.push_owned($query);)*p
+    }}
+}

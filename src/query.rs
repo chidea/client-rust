@@ -153,6 +153,10 @@ impl Pipeline {
     pub fn query_count(&self) -> usize {
         self.cnt
     }
+    /// Same as [`Self::push`], but passes ownership to the [`Pipeline`]
+    pub fn push_owned(&mut self, q: Query) {
+        self.push(&q);
+    }
     /// Add a query to this pipeline
     ///
     /// Note: It's not possible to get the query back from the pipeline since it's not indexed (and doing so would be an unnecessary
