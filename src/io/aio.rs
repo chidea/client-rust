@@ -34,7 +34,10 @@ use {
         Config, Query,
     },
     native_tls::Certificate,
-    std::ops::{Deref, DerefMut},
+    std::{
+        ops::{Deref, DerefMut},
+        time::Instant,
+    },
     tokio::{
         io::{AsyncReadExt, AsyncWriteExt},
         net::TcpStream,
@@ -181,8 +184,34 @@ impl<C: AsyncWriteExt + AsyncReadExt + Unpin> TcpConnection<C> {
     }
     /// Run a query and return a raw [`Response`]
     pub async fn query(&mut self, q: &Query) -> ClientResult<Response> {
+        self._query(q, || {}, |_| {}).await.map(|(resp, _)| resp)
+    }
+    /// This is a debug extension that returns the time to first byte (TTFB) along with the response
+    pub async fn debug_query_ttfb(&mut self, q: &Query) -> ClientResult<(Response, u128)> {
+        self._query(
+            q,
+            || (Instant::now(), None),
+            |(_start, stop)| {
+                stop.get_or_insert_with(|| Instant::now());
+            },
+        )
+        .await
+        .map(|(resp, (start_time, stop_time))| {
+            (
+                resp,
+                stop_time.unwrap().duration_since(start_time).as_nanos(),
+            )
+        })
+    }
+    async fn _query<T>(
+        &mut self,
+        q: &Query,
+        init_state: impl Fn() -> T,
+        update_state: impl Fn(&mut T),
+    ) -> ClientResult<(Response, T)> {
         self.buf.clear();
         q.write_packet(&mut self.buf).unwrap();
+        let mut extra_state = init_state();
         self.con.write_all(&self.buf).await?;
         self.buf.clear();
         let mut state = RState::default();
@@ -194,13 +223,14 @@ impl<C: AsyncWriteExt + AsyncReadExt + Unpin> TcpConnection<C> {
             if n == 0 {
                 return Err(Error::IoError(std::io::ErrorKind::ConnectionReset.into()));
             }
+            update_state(&mut extra_state);
             if n < expected {
                 continue;
             }
             self.buf.extend_from_slice(&buf[..n]);
             let mut decoder = Decoder::new(&self.buf, cursor);
             match decoder.validate_response(state) {
-                DecodeState::Completed(resp) => return Ok(resp),
+                DecodeState::Completed(resp) => return Ok((resp, extra_state)),
                 DecodeState::ChangeState(_state) => {
                     expected = 1;
                     state = _state;

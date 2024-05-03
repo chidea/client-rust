@@ -40,6 +40,7 @@ use {
         io::{Read, Write},
         net::TcpStream,
         ops::{Deref, DerefMut},
+        time::Instant,
     },
 };
 
@@ -176,8 +177,34 @@ impl<C: Write + Read> TcpConnection<C> {
     }
     /// Run a query and return a raw [`Response`]
     pub fn query(&mut self, q: &Query) -> ClientResult<Response> {
+        self._query(q, || {}, |_| {}).map(|(resp, _)| resp)
+    }
+    /// This is a debug extension that returns the time to first byte (TTFB) along with the response
+    pub fn debug_query_ttfb(&mut self, q: &Query) -> ClientResult<(Response, u128)> {
+        self._query(
+            q,
+            || (Instant::now(), None),
+            |(_start, stop)| {
+                stop.get_or_insert_with(|| Instant::now());
+            },
+        )
+        .map(|(resp, (start_time, stop_time))| {
+            (
+                resp,
+                stop_time.unwrap().duration_since(start_time).as_nanos(),
+            )
+        })
+    }
+    /// Run a query and return a raw [`Response`]
+    fn _query<T>(
+        &mut self,
+        q: &Query,
+        init_state: impl Fn() -> T,
+        update_state: impl Fn(&mut T),
+    ) -> ClientResult<(Response, T)> {
         self.buf.clear();
         q.write_packet(&mut self.buf).unwrap();
+        let mut extra_state = init_state();
         self.con.write_all(&self.buf)?;
         self.buf.clear();
         let mut state = RState::default();
@@ -188,6 +215,7 @@ impl<C: Write + Read> TcpConnection<C> {
             if n == 0 {
                 return Err(Error::IoError(std::io::ErrorKind::ConnectionReset.into()));
             }
+            update_state(&mut extra_state);
             self.buf.extend_from_slice(&buf[..n]);
             let mut decoder = Decoder::new(&self.buf, cursor);
             match decoder.validate_response(state) {
@@ -196,7 +224,7 @@ impl<C: Write + Read> TcpConnection<C> {
                     cursor = decoder.position();
                     continue;
                 }
-                DecodeState::Completed(resp) => return Ok(resp),
+                DecodeState::Completed(resp) => return Ok((resp, extra_state)),
                 DecodeState::Error(e) => return Err(e.into()),
             }
         }
