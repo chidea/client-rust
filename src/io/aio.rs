@@ -199,7 +199,7 @@ impl<C: AsyncWriteExt + AsyncReadExt + Unpin> TcpConnection<C> {
         .map(|(resp, (start_time, stop_time))| {
             (
                 resp,
-                stop_time.unwrap().duration_since(start_time).as_nanos(),
+                stop_time.unwrap().duration_since(start_time).as_micros(),
             )
         })
     }
