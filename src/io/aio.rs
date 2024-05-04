@@ -22,6 +22,7 @@
 //! See the [`crate`] root documentation for help on establishing and using database connections.
 
 use {
+    super::LatencyStat,
     crate::{
         error::{ClientResult, ConnectionSetupError, Error},
         protocol::{
@@ -184,22 +185,37 @@ impl<C: AsyncWriteExt + AsyncReadExt + Unpin> TcpConnection<C> {
     }
     /// Run a query and return a raw [`Response`]
     pub async fn query(&mut self, q: &Query) -> ClientResult<Response> {
-        self._query(q, || {}, |_| {}).await.map(|(resp, _)| resp)
+        self._query(q, || {}, |_| {}, |_| {})
+            .await
+            .map(|(resp, _)| resp)
     }
-    /// This is a debug extension that returns the time to first byte (TTFB) along with the response
-    pub async fn debug_query_ttfb(&mut self, q: &Query) -> ClientResult<(Response, u128)> {
+    /// This is a debug extension that returns latency stats along with the response
+    pub async fn debug_query_latency(
+        &mut self,
+        q: &Query,
+    ) -> ClientResult<(Response, LatencyStat)> {
         self._query(
             q,
-            || (Instant::now(), None),
-            |(_start, stop)| {
-                stop.get_or_insert_with(|| Instant::now());
+            || (Instant::now(), None, None),
+            |(_, stop_ttfb, stop_full)| {
+                if stop_ttfb.is_none() || stop_full.is_none() {
+                    let now = Instant::now();
+                    stop_ttfb.get_or_insert(now);
+                    stop_full.get_or_insert(now);
+                }
+            },
+            |(_, _, stop_full)| {
+                *stop_full = None;
             },
         )
         .await
-        .map(|(resp, (start_time, stop_time))| {
+        .map(|(resp, (start_time, stop_ttfb, stop_full))| {
             (
                 resp,
-                stop_time.unwrap().duration_since(start_time).as_micros(),
+                LatencyStat::new(
+                    stop_ttfb.unwrap().duration_since(start_time).as_micros(),
+                    stop_full.unwrap().duration_since(start_time).as_micros(),
+                ),
             )
         })
     }
@@ -207,7 +223,8 @@ impl<C: AsyncWriteExt + AsyncReadExt + Unpin> TcpConnection<C> {
         &mut self,
         q: &Query,
         init_state: impl Fn() -> T,
-        update_state: impl Fn(&mut T),
+        update_state_for_read_event: impl Fn(&mut T),
+        update_state_for_incomplete_event: impl Fn(&mut T),
     ) -> ClientResult<(Response, T)> {
         self.buf.clear();
         q.write_packet(&mut self.buf).unwrap();
@@ -216,23 +233,19 @@ impl<C: AsyncWriteExt + AsyncReadExt + Unpin> TcpConnection<C> {
         self.buf.clear();
         let mut state = RState::default();
         let mut cursor = 0;
-        let mut expected = Decoder::MIN_READBACK;
         loop {
             let mut buf = [0u8; crate::BUFSIZE];
             let n = self.con.read(&mut buf).await?;
             if n == 0 {
                 return Err(Error::IoError(std::io::ErrorKind::ConnectionReset.into()));
             }
-            update_state(&mut extra_state);
-            if n < expected {
-                continue;
-            }
+            update_state_for_read_event(&mut extra_state);
             self.buf.extend_from_slice(&buf[..n]);
             let mut decoder = Decoder::new(&self.buf, cursor);
             match decoder.validate_response(state) {
                 DecodeState::Completed(resp) => return Ok((resp, extra_state)),
                 DecodeState::ChangeState(_state) => {
-                    expected = 1;
+                    update_state_for_incomplete_event(&mut extra_state);
                     state = _state;
                     cursor = decoder.position();
                 }

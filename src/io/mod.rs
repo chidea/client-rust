@@ -16,3 +16,23 @@
 
 pub mod aio;
 pub mod sync;
+
+pub struct LatencyStat {
+    ttfb_micros: u128,
+    full_resp_micros: u128,
+}
+
+impl LatencyStat {
+    fn new(ttfb_micros: u128, full_resp_micros: u128) -> Self {
+        Self {
+            ttfb_micros,
+            full_resp_micros,
+        }
+    }
+    pub fn full_resp(&self) -> u128 {
+        self.full_resp_micros
+    }
+    pub fn ttfb_micros(&self) -> u128 {
+        self.ttfb_micros
+    }
+}

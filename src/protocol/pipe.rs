@@ -114,7 +114,7 @@ fn t_pipe() {
 
 #[test]
 fn t_pipe_staged() {
-    for i in Decoder::MIN_READBACK..QUERY.len() {
+    for i in 1..QUERY.len() {
         let mut dec = Decoder::new(&QUERY[..i], 0);
         if i < 3 {
             assert!(matches!(

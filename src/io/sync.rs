@@ -23,6 +23,7 @@
 //!
 
 use {
+    super::LatencyStat,
     crate::{
         config::Config,
         error::{ClientResult, ConnectionSetupError, Error},
@@ -177,30 +178,40 @@ impl<C: Write + Read> TcpConnection<C> {
     }
     /// Run a query and return a raw [`Response`]
     pub fn query(&mut self, q: &Query) -> ClientResult<Response> {
-        self._query(q, || {}, |_| {}).map(|(resp, _)| resp)
+        self._query(q, || {}, |_| {}, |_| {}).map(|(resp, _)| resp)
     }
-    /// This is a debug extension that returns the time to first byte (TTFB) along with the response
-    pub fn debug_query_ttfb(&mut self, q: &Query) -> ClientResult<(Response, u128)> {
+    /// This is a debug extension that returns latency stats along with the response
+    pub fn debug_query_latency(&mut self, q: &Query) -> ClientResult<(Response, LatencyStat)> {
         self._query(
             q,
-            || (Instant::now(), None),
-            |(_start, stop)| {
-                stop.get_or_insert_with(|| Instant::now());
+            || (Instant::now(), None, None),
+            |(_, stop_ttfb, stop_full)| {
+                if stop_ttfb.is_none() || stop_full.is_none() {
+                    let now = Instant::now();
+                    stop_ttfb.get_or_insert(now);
+                    stop_full.get_or_insert(now);
+                }
+            },
+            |(_, _, stop_full)| {
+                *stop_full = None;
             },
         )
-        .map(|(resp, (start_time, stop_time))| {
+        .map(|(resp, (start_time, stop_ttfb, stop_full))| {
             (
                 resp,
-                stop_time.unwrap().duration_since(start_time).as_micros(),
+                LatencyStat::new(
+                    stop_ttfb.unwrap().duration_since(start_time).as_micros(),
+                    stop_full.unwrap().duration_since(start_time).as_micros(),
+                ),
             )
         })
     }
-    /// Run a query and return a raw [`Response`]
     fn _query<T>(
         &mut self,
         q: &Query,
         init_state: impl Fn() -> T,
-        update_state: impl Fn(&mut T),
+        update_state_for_read_event: impl Fn(&mut T),
+        update_state_for_incomplete_event: impl Fn(&mut T),
     ) -> ClientResult<(Response, T)> {
         self.buf.clear();
         q.write_packet(&mut self.buf).unwrap();
@@ -215,17 +226,17 @@ impl<C: Write + Read> TcpConnection<C> {
             if n == 0 {
                 return Err(Error::IoError(std::io::ErrorKind::ConnectionReset.into()));
             }
-            update_state(&mut extra_state);
+            update_state_for_read_event(&mut extra_state);
             self.buf.extend_from_slice(&buf[..n]);
             let mut decoder = Decoder::new(&self.buf, cursor);
             match decoder.validate_response(state) {
-                DecodeState::ChangeState(new_state) => {
-                    state = new_state;
-                    cursor = decoder.position();
-                    continue;
-                }
                 DecodeState::Completed(resp) => return Ok((resp, extra_state)),
-                DecodeState::Error(e) => return Err(e.into()),
+                DecodeState::ChangeState(_state) => {
+                    update_state_for_incomplete_event(&mut extra_state);
+                    state = _state;
+                    cursor = decoder.position();
+                }
+                DecodeState::Error(e) => return Err(Error::ProtocolError(e)),
             }
         }
     }

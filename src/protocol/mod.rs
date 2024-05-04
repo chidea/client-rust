@@ -66,7 +66,6 @@ pub struct Decoder<'a> {
 }
 
 impl<'a> Decoder<'a> {
-    pub const MIN_READBACK: usize = 1;
     pub fn new(b: &'a [u8], i: usize) -> Self {
         Self { b, i }
     }
