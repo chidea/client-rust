@@ -11,6 +11,7 @@ All changes in this project will be noted in this file.
 ### Additions
 
 - Added `FromResponse` for `Vec<Row>`
+- Added `SQParam` impl for `&Vec<u8>`
 
 ## 0.8.7
 
