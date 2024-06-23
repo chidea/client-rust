@@ -15,10 +15,7 @@
 */
 
 use {
-    super::{
-        state::{DecodeState, RState, ResponseState},
-        Decoder, ProtocolError,
-    },
+    super::{DecodeState, Decoder, ProtocolError, RState, ResponseState},
     crate::response::Response,
 };
 
@@ -42,35 +39,38 @@ impl MRespState {
     fn except() -> PipelineResult {
         PipelineResult::Error(ProtocolError::InvalidPacket)
     }
-    fn step(mut self, decoder: &mut Decoder, expected: usize) -> PipelineResult {
+    fn step(mut self, mut decoder: Decoder, expected: usize) -> (PipelineResult, usize) {
+        let buf = decoder.b;
         loop {
-            if decoder._cursor_eof() {
-                return PipelineResult::Pending(self);
+            if decoder.eof() {
+                return (PipelineResult::Pending(self), decoder.position());
             }
-            if decoder._cursor_value() == ILLEGAL_PACKET_ESCAPE {
-                return Self::except();
+            if decoder.cursor_value() == ILLEGAL_PACKET_ESCAPE {
+                return (Self::except(), 0);
             }
-            match decoder.validate_response(RState(
+            let (_state, _position) = decoder.validate_response(RState(
                 self.pending.take().unwrap_or(ResponseState::Initial),
-            )) {
+            ));
+            match _state {
+                DecodeState::Completed(resp) => {
+                    self.processed.push(resp);
+                    if self.processed.len() == expected {
+                        return (PipelineResult::Completed(self.processed), _position);
+                    }
+                    decoder = Decoder::new(buf, _position);
+                }
                 DecodeState::ChangeState(RState(s)) => {
                     self.pending = Some(s);
-                    return PipelineResult::Pending(self);
+                    return (PipelineResult::Pending(self), _position);
                 }
-                DecodeState::Completed(c) => {
-                    self.processed.push(c);
-                    if self.processed.len() == expected {
-                        return PipelineResult::Completed(self.processed);
-                    }
-                }
-                DecodeState::Error(e) => return PipelineResult::Error(e),
+                DecodeState::Error(e) => return (PipelineResult::Error(e), _position),
             }
         }
     }
 }
 
 impl<'a> Decoder<'a> {
-    pub fn validate_pipe(&mut self, expected: usize, state: MRespState) -> PipelineResult {
+    pub fn validate_pipe(self, expected: usize, state: MRespState) -> (PipelineResult, usize) {
         state.step(self, expected)
     }
 }
@@ -81,9 +81,9 @@ const QUERY: &[u8] = b"\x12\x10\xFF\xFF\x115\n\x00\x01\x01\x0D5\nsayan\x0220\n\x
 #[test]
 fn t_pipe() {
     use crate::response::{Response, Row, Value};
-    let mut decoder = Decoder::new(QUERY, 0);
+    let decoder = Decoder::new(QUERY, 0);
     assert_eq!(
-        decoder.validate_pipe(5, MRespState::default()),
+        decoder.validate_pipe(5, MRespState::default()).0,
         PipelineResult::Completed(vec![
             Response::Empty,
             Response::Error(u16::MAX),
@@ -115,15 +115,15 @@ fn t_pipe() {
 #[test]
 fn t_pipe_staged() {
     for i in Decoder::MIN_READBACK..QUERY.len() {
-        let mut dec = Decoder::new(&QUERY[..i], 0);
+        let dec = Decoder::new(&QUERY[..i], 0);
         if i < 3 {
             assert!(matches!(
-                dec.validate_pipe(5, MRespState::default()),
+                dec.validate_pipe(5, MRespState::default()).0,
                 PipelineResult::Pending(_)
             ));
         } else {
             assert!(matches!(
-                dec.validate_pipe(5, MRespState::default()),
+                dec.validate_pipe(5, MRespState::default()).0,
                 PipelineResult::Pending(_)
             ));
         }
