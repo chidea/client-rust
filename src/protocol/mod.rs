@@ -884,6 +884,6 @@ fn decode_multi_value_stream() {
                     Value::String("fghij".to_string())
                 ])
             ])
-            .collect::<Vec<Vec<Value>>>()
+            .collect::<Vec<_>>()
     );
 }
