@@ -51,7 +51,7 @@ fn main() {
         .unwrap();
     // create model
     db.query_parse::<()>(&query!(
-        "create model myspace.mymodel(username: string, password: string, followers: uint64, null email: string"
+        "create model myspace.mymodel(username: string, password: string, followers: uint64, null email: string)"
     ))
     .unwrap();
 

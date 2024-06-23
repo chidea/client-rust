@@ -29,8 +29,7 @@ use {
         error::{ClientResult, ConnectionSetupError, Error},
         protocol::{
             handshake::{ClientHandshake, ServerHandshake},
-            state_init::{DecodeState, MRespState, PipelineResult, RState},
-            Decoder,
+            DecodeState, Decoder, MRespState, PipelineResult, RState,
         },
         query::Pipeline,
         response::{FromResponse, Response},
@@ -165,11 +164,12 @@ impl<C: Write + Read> TcpConnection<C> {
                 return Err(Error::IoError(std::io::ErrorKind::ConnectionReset.into()));
             }
             self.buf.extend_from_slice(&buf[..n]);
-            let mut decoder = Decoder::new(&self.buf, cursor);
-            match decoder.validate_pipe(pipeline.query_count(), state) {
+            let (_state, _position) =
+                Decoder::new(&self.buf, cursor).validate_pipe(pipeline.query_count(), state);
+            match _state {
                 PipelineResult::Completed(r) => return Ok(r),
                 PipelineResult::Pending(_state) => {
-                    cursor = decoder.position();
+                    cursor = _position;
                     state = _state;
                 }
                 PipelineResult::Error(e) => return Err(e.into()),
@@ -228,13 +228,13 @@ impl<C: Write + Read> TcpConnection<C> {
             }
             update_state_for_read_event(&mut extra_state);
             self.buf.extend_from_slice(&buf[..n]);
-            let mut decoder = Decoder::new(&self.buf, cursor);
-            match decoder.validate_response(state) {
+            let (_state, _position) = Decoder::new(&self.buf, cursor).validate_response(state);
+            match _state {
                 DecodeState::Completed(resp) => return Ok((resp, extra_state)),
                 DecodeState::ChangeState(_state) => {
                     update_state_for_incomplete_event(&mut extra_state);
                     state = _state;
-                    cursor = decoder.position();
+                    cursor = _position;
                 }
                 DecodeState::Error(e) => return Err(Error::ProtocolError(e)),
             }
