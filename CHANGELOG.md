@@ -2,31 +2,42 @@
 
 All changes in this project will be noted in this file.
 
-### 0.8.7 (unreleased)
+## 0.8.8
+
+### Fixes
+
+- Fixed response decoder and handling issues
+
+### Additions
+
+- Added `FromResponse` for `Vec<Row>`
+- Added `SQParam` impl for `&Vec<u8>`
+
+## 0.8.7
 
 > - **Field change warnings**:
 >   - The `Config` struct now has one additional field. This is not a breaking change because the functionality of the library remains unchanged
 
-#### Additions
+### Additions
 
 - Added support for pipelines
 - Added `Response::parse` to convert a response into compatible types
 
-### 0.8.6
+## 0.8.6
 
 Reduced allocations in `Query`.
 
-### 0.8.5
+## 0.8.5
 
 Fixed bugs with the derive macros.
 
-### 0.8.4
+## 0.8.4
 
 > **Yanked version**
 
 Fixed an issue with single-item struct derives when using the `Response` macro.
 
-### 0.8.3
+## 0.8.3
 
 Added the following implementations:
 - `FromResponse` for `Row`
@@ -34,22 +45,22 @@ Added the following implementations:
 - Added the `Value::parse` and `Value::parse_cloned` member methods
 - Added `Row::into_first` and `Row::into_first_as` member methods
 
-### 0.8.2
+## 0.8.2
 
 Support deriving queries and responses.
 
-### 0.8.1
+## 0.8.1
 
 Fixed issues with documentation
 
 ## 0.8.0
 
-#### New features
+### New features
 - Completely up to date for Skyhash 2.0
 - New query API interface for Skytable Octave (completely breaking!)
 - No longer depends on OpenSSL
 
-#### Breaking changes
+### Breaking changes
 The enter query interface as changed and is incompatible with previous driver versions. Please consider reading the Skytable
 Octave upgrade guide.
 

@@ -314,3 +314,12 @@ impl FromResponse for Row {
         }
     }
 }
+
+impl FromResponse for Vec<Row> {
+    fn from_response(resp: Response) -> ClientResult<Self> {
+        match resp {
+            Response::Rows(rows) => Ok(rows),
+            _ => Err(Error::ParseError(ParseError::ResponseMismatch)),
+        }
+    }
+}

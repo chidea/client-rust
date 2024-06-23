@@ -366,6 +366,11 @@ impl SQParam for Vec<u8> {
         1
     }
 }
+impl<'a> SQParam for &'a Vec<u8> {
+    fn append_param(&self, q: &mut Vec<u8>) -> usize {
+        self.as_slice().append_param(q)
+    }
+}
 // str
 impl<'a> SQParam for &'a str {
     fn append_param(&self, buf: &mut Vec<u8>) -> usize {
