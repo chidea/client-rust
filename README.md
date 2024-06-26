@@ -27,7 +27,10 @@ skytable = "0.8"
 You're ready to go!
 
 ```rust
-use skytable::{Query, Response, Config, query};
+use skytable::{
+    Query, Response, Config, query,
+    response::Rows,
+};
 
 #[derive(Query, Response)]
 #[derive(Clone, PartialEq, Debug)] // we just do these for the assert (they are not needed)
@@ -49,6 +52,10 @@ db.query_parse::<()>(&q).unwrap();
 // select data
 let user: User = db.query_parse(&query!("select * from myspace.mymodel where username = ?", &our_user.userid)).unwrap();
 assert_eq!(user, our_user);
+
+// select multiple rows
+let users: Rows<User> = db.query_parse(&query!("select all * from myspace.mymodel limit ?", 1000u64)).unwrap();
+assert_eq!(users[0].userid, "user");
 ```
 
 > **Read [docs here to learn BlueQL](https://docs.skytable.io/)**

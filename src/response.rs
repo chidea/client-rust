@@ -359,6 +359,21 @@ impl FromRow for Row {
 
 #[derive(Debug, PartialEq)]
 /// A collection of rows
+///
+/// ## Example
+/// ```no_run
+/// use skytable::{response::Rows, Config, Response, query};
+///
+/// #[derive(Response)]
+/// struct User {
+///     username: String,
+///     password: String,
+/// }
+///
+/// let mut db = Config::new_default("user", "pass").connect().unwrap();
+/// let users: Rows<User> = db.query_parse(&query!("select all * from myapp.users limit ?", 1000u64)).unwrap();
+/// assert_eq!(users[0].username, "sayan");
+/// ```
 pub struct Rows<T: FromRow = Row>(Vec<T>);
 
 impl<T: FromRow> Rows<T> {
