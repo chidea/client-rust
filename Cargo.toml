@@ -14,7 +14,7 @@ version = "0.8.8"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
 # internal deps
-sky-derive = "0.2.2"
+sky-derive = "0.2.3"
 # external deps
 tokio = { version = "1.38.0", features = ["full"] }
 native-tls = "0.2.12"

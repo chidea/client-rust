@@ -32,7 +32,10 @@
 //! ```
 //!
 
-use crate::error::{ClientResult, Error, ParseError};
+use {
+    crate::error::{ClientResult, Error, ParseError},
+    std::ops::Deref,
+};
 
 /// The value directly returned by the server without any additional type parsing and/or casting
 #[derive(Debug, PartialEq, Clone)]
@@ -90,6 +93,13 @@ impl Value {
 /// A row returned by the server
 pub struct Row {
     values: Vec<Value>,
+}
+
+impl Deref for Row {
+    type Target = [Value];
+    fn deref(&self) -> &Self::Target {
+        &self.values
+    }
 }
 
 impl Row {
@@ -267,6 +277,15 @@ macro_rules! from_response_row {
                     Ok(($($elem::from_value(values.next().unwrap())?),*,))
                 }
             }
+            impl<$($elem: FromValue),*> FromRow for ($($elem),*,) {
+                fn from_row(row: Row) -> ClientResult<Self> {
+                    if row.values().len() != $size {
+                        return Err(Error::ParseError(ParseError::TypeMismatch));
+                    }
+                    let mut values = row.into_values().into_iter();
+                    Ok(($($elem::from_value(values.next().unwrap())?),*,))
+                }
+            }
         )*
     }
 }
@@ -321,5 +340,50 @@ impl FromResponse for Vec<Row> {
             Response::Rows(rows) => Ok(rows),
             _ => Err(Error::ParseError(ParseError::ResponseMismatch)),
         }
+    }
+}
+
+/// Trait for parsing a row into a custom type
+pub trait FromRow: Sized {
+    /// Parse a row into a custom type
+    fn from_row(row: Row) -> ClientResult<Self>;
+}
+
+impl FromRow for Row {
+    fn from_row(row: Row) -> ClientResult<Self> {
+        Ok(row)
+    }
+}
+
+#[derive(Debug, PartialEq)]
+/// A collection of rows
+pub struct Rows<T: FromRow = Row>(Vec<T>);
+
+impl<T: FromRow> Rows<T> {
+    /// Consume the [`Rows`] object and get all the rows as a vector
+    pub fn into_rows(self) -> Vec<T> {
+        self.0
+    }
+}
+
+impl<T: FromRow> FromResponse for Rows<T> {
+    fn from_response(resp: Response) -> ClientResult<Self> {
+        match resp {
+            Response::Rows(rows) => {
+                let mut ret = vec![];
+                for row in rows {
+                    ret.push(T::from_row(row)?);
+                }
+                Ok(Self(ret))
+            }
+            _ => Err(Error::ParseError(ParseError::ResponseMismatch)),
+        }
+    }
+}
+
+impl<T: FromRow> Deref for Rows<T> {
+    type Target = [T];
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }
