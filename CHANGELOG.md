@@ -2,6 +2,17 @@
 
 All changes in this project will be noted in this file.
 
+## 0.8.9
+
+### Additions
+
+- Added enhanced multi-row decode support
+- Added deref to slice for rows
+
+### Fixes
+
+- Fixed error propagation in `FromResponse` impls
+
 ## 0.8.8
 
 ### Fixes

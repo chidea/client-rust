@@ -329,6 +329,7 @@ impl FromResponse for Row {
     fn from_response(resp: Response) -> ClientResult<Self> {
         match resp {
             Response::Row(r) => Ok(r),
+            Response::Error(e) => Err(Error::ServerError(e)),
             _ => Err(Error::ParseError(ParseError::ResponseMismatch)),
         }
     }
@@ -338,6 +339,7 @@ impl FromResponse for Vec<Row> {
     fn from_response(resp: Response) -> ClientResult<Self> {
         match resp {
             Response::Rows(rows) => Ok(rows),
+            Response::Error(e) => Err(Error::ServerError(e)),
             _ => Err(Error::ParseError(ParseError::ResponseMismatch)),
         }
     }
@@ -376,6 +378,7 @@ impl<T: FromRow> FromResponse for Rows<T> {
                 }
                 Ok(Self(ret))
             }
+            Response::Error(e) => Err(Error::ServerError(e)),
             _ => Err(Error::ParseError(ParseError::ResponseMismatch)),
         }
     }
