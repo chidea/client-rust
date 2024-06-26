@@ -54,6 +54,12 @@ pub fn derive_response(input: TokenStream) -> TokenStream {
                             Ok(#struct_instantiation)
                         }
                     }
+                    impl #impl_generics skytable::response::FromRow for #name #ty_generics #where_clause {
+                        fn from_row(row: skytable::response::Row) -> skytable::ClientResult<Self> {
+                            let #tuple_pattern = skytable::response::FromRow::from_row(row)?;
+                            Ok(#struct_instantiation)
+                        }
+                    }
                 }
             }
             _ => unimplemented!(),
