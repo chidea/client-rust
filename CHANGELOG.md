@@ -2,6 +2,12 @@
 
 All changes in this project will be noted in this file.
 
+## 0.8.10
+
+### Fixes
+
+- Fixed decode of multi-row responses
+
 ## 0.8.9
 
 ### Additions
