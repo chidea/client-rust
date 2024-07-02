@@ -571,16 +571,6 @@ impl PendingValue {
     value stream: a sequential list of values (state cached)
 */
 
-pub(crate) trait AsValueStream: Sized {
-    fn from_value_stream(v: Vec<Value>) -> Self;
-}
-
-impl AsValueStream for Row {
-    fn from_value_stream(v: Vec<Value>) -> Self {
-        Row::new(v)
-    }
-}
-
 #[derive(Debug, PartialEq)]
 pub(crate) struct ValueStream {
     element_count: ProtocolObjectDecodeState<usize, LfsValue<usize>>,
