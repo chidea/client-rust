@@ -395,18 +395,18 @@ const LIST_SYM_OPEN: u8 = 0x09;
 const LIST_SYM_CLOSE: u8 = ']' as u8;
 
 /// A list type representing a Skyhash list type, used in parameter lists
-pub struct List<'a, T: SQParam> {
+pub struct QList<'a, T: SQParam> {
     l: &'a [T],
 }
 
-impl<'a, T: SQParam> List<'a, T> {
+impl<'a, T: SQParam> QList<'a, T> {
     /// create a new list
     pub fn new(l: &'a [T]) -> Self {
         Self { l }
     }
 }
 
-impl<'a, T: SQParam> SQParam for List<'a, T> {
+impl<'a, T: SQParam> SQParam for QList<'a, T> {
     fn append_param(&self, q: &mut Vec<u8>) -> usize {
         q.push(LIST_SYM_OPEN);
         for param in self.l {
@@ -420,7 +420,7 @@ impl<'a, T: SQParam> SQParam for List<'a, T> {
 #[test]
 fn list_param() {
     let data = vec!["hello", "giant", "world"];
-    let list = List::new(&data);
+    let list = QList::new(&data);
     let q = query!(
         "insert into apps.social(?, ?, ?)",
         "username",
