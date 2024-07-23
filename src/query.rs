@@ -391,10 +391,11 @@ impl SQParam for String {
     }
 }
 
-const LIST_SYM_OPEN: u8 = 0x09;
+const LIST_SYM_OPEN: u8 = 0x07;
 const LIST_SYM_CLOSE: u8 = ']' as u8;
 
 /// A list type representing a Skyhash list type, used in parameter lists
+#[derive(Debug, PartialEq, Clone)]
 pub struct QList<'a, T: SQParam> {
     l: &'a [T],
 }
@@ -428,4 +429,5 @@ fn list_param() {
         list
     );
     assert_eq!(q.param_cnt(), 3);
+    dbg!(String::from_utf8(q.debug_encode_packet())).unwrap();
 }

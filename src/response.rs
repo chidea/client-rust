@@ -407,6 +407,7 @@ impl<T: FromRow> Deref for Rows<T> {
 }
 
 /// A list received from a response
+#[derive(Debug, PartialEq, Clone)]
 pub struct RList<T: FromValue = Value>(Vec<T>);
 
 impl<T: FromValue> RList<T> {
