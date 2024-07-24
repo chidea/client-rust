@@ -128,6 +128,12 @@ impl Row {
     }
 }
 
+impl From<Vec<Value>> for Row {
+    fn from(values: Vec<Value>) -> Self {
+        Self { values }
+    }
+}
+
 #[derive(Debug, PartialEq, Clone)]
 /// A response returned by the server
 pub enum Response {
@@ -409,6 +415,12 @@ impl<T: FromRow> Deref for Rows<T> {
 /// A list received from a response
 #[derive(Debug, PartialEq, Clone)]
 pub struct RList<T: FromValue = Value>(Vec<T>);
+
+impl<T: FromValue> From<Vec<T>> for RList<T> {
+    fn from(values: Vec<T>) -> Self {
+        Self(values)
+    }
+}
 
 impl<T: FromValue> RList<T> {
     /// Returns the values of the list
