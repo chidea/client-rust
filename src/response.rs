@@ -128,6 +128,12 @@ impl Row {
     }
 }
 
+impl From<Vec<Value>> for Row {
+    fn from(values: Vec<Value>) -> Self {
+        Self { values }
+    }
+}
+
 #[derive(Debug, PartialEq, Clone)]
 /// A response returned by the server
 pub enum Response {
@@ -404,4 +410,58 @@ impl<T: FromRow> Deref for Rows<T> {
     fn deref(&self) -> &Self::Target {
         &self.0
     }
+}
+
+/// A list received from a response
+#[derive(Debug, PartialEq, Clone)]
+pub struct RList<T: FromValue = Value>(Vec<T>);
+
+impl<T: FromValue> From<Vec<T>> for RList<T> {
+    fn from(values: Vec<T>) -> Self {
+        Self(values)
+    }
+}
+
+impl<T: FromValue> RList<T> {
+    /// Returns the values of the list
+    pub fn into_values(self) -> Vec<T> {
+        self.0
+    }
+}
+
+impl<T: FromValue> Deref for RList<T> {
+    type Target = [T];
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<T: FromValue> FromValue for RList<T> {
+    fn from_value(v: Value) -> ClientResult<Self> {
+        match v {
+            Value::List(l) => {
+                let mut ret = Vec::new();
+                for value in l {
+                    ret.push(T::from_value(value)?);
+                }
+                Ok(Self(ret))
+            }
+            _ => Err(Error::ParseError(ParseError::TypeMismatch)),
+        }
+    }
+}
+
+#[test]
+fn resp_list_parse() {
+    let response_list = Response::Row(Row::new(vec![
+        Value::String("sayan".to_owned()),
+        Value::List(vec![
+            Value::String("c".to_owned()),
+            Value::String("assembly".to_owned()),
+            Value::String("rust".to_owned()),
+        ]),
+    ]));
+    let (name, languages) = response_list.parse::<(String, RList<String>)>().unwrap();
+    assert_eq!(name, "sayan");
+    assert_eq!(languages.as_ref(), vec!["c", "assembly", "rust"]);
 }

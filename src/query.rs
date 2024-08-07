@@ -390,3 +390,44 @@ impl SQParam for String {
         self.as_str().append_param(buf)
     }
 }
+
+const LIST_SYM_OPEN: u8 = 0x07;
+const LIST_SYM_CLOSE: u8 = ']' as u8;
+
+/// A list type representing a Skyhash list type, used in parameter lists
+#[derive(Debug, PartialEq, Clone)]
+pub struct QList<'a, T: SQParam> {
+    l: &'a [T],
+}
+
+impl<'a, T: SQParam> QList<'a, T> {
+    /// create a new list
+    pub fn new(l: &'a [T]) -> Self {
+        Self { l }
+    }
+}
+
+impl<'a, T: SQParam> SQParam for QList<'a, T> {
+    fn append_param(&self, q: &mut Vec<u8>) -> usize {
+        q.push(LIST_SYM_OPEN);
+        for param in self.l {
+            param.append_param(q);
+        }
+        q.push(LIST_SYM_CLOSE);
+        1
+    }
+}
+
+#[test]
+fn list_param() {
+    let data = vec!["hello", "giant", "world"];
+    let list = QList::new(&data);
+    let q = query!(
+        "insert into apps.social(?, ?, ?)",
+        "username",
+        "password",
+        list
+    );
+    assert_eq!(q.param_cnt(), 3);
+    dbg!(String::from_utf8(q.debug_encode_packet())).unwrap();
+}
