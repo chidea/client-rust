@@ -21,6 +21,8 @@
 //! The client-driver is distributed under the liberal [Apache-2.0 License](https://www.apache.org/licenses/LICENSE-2.0) and hence
 //! you can use it in your applications without any licensing issues.
 //!
+//! **📁 You can [find some usage examples in this folder here](https://github.com/skytable/client-rust/tree/v0.8.11/examples)**.
+//!
 //! ## Definitive example
 //!
 //! ```no_run
