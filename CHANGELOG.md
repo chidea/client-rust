@@ -2,6 +2,13 @@
 
 All changes in this project will be noted in this file.
 
+## 0.8.11
+
+### Additions
+
+- Added `QList` and `RList` for using dynamic lists
+- Allow using references for custom types in `query!` macro
+
 ## 0.8.10
 
 ### Fixes

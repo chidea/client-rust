@@ -290,6 +290,12 @@ where
     }
 }
 
+impl<'a, T: SQParam> SQParam for &'a T {
+    fn append_param(&self, q: &mut Vec<u8>) -> usize {
+        T::append_param(self, q)
+    }
+}
+
 /// Use this when you need to use `null`
 pub struct Null;
 impl SQParam for Null {
@@ -350,25 +356,12 @@ impl<const N: usize> SQParam for [u8; N] {
         1
     }
 }
-impl<'a, const N: usize> SQParam for &'a [u8; N] {
-    fn append_param(&self, buf: &mut Vec<u8>) -> usize {
-        buf.push(5);
-        pushlen!(buf, self.len());
-        buf.extend(*self);
-        1
-    }
-}
 impl SQParam for Vec<u8> {
     fn append_param(&self, buf: &mut Vec<u8>) -> usize {
         buf.push(5);
         pushlen!(buf, self.len());
         buf.extend(self);
         1
-    }
-}
-impl<'a> SQParam for &'a Vec<u8> {
-    fn append_param(&self, q: &mut Vec<u8>) -> usize {
-        self.as_slice().append_param(q)
     }
 }
 // str
@@ -378,11 +371,6 @@ impl<'a> SQParam for &'a str {
         pushlen!(buf, self.len());
         buf.extend(self.as_bytes());
         1
-    }
-}
-impl<'a> SQParam for &'a String {
-    fn append_param(&self, q: &mut Vec<u8>) -> usize {
-        self.as_str().append_param(q)
     }
 }
 impl SQParam for String {
