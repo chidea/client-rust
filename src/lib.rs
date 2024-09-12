@@ -35,7 +35,7 @@
 //!     userid: String,
 //!     pass: String,
 //!     followers: u64,
-//!     email: Option<String>
+//!     email: Option<String>,
 //! }
 //!
 //! let our_user = User { userid: "user".into(), pass: "pass".into(), followers: 120, email: None };

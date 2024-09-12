@@ -414,7 +414,7 @@ impl<T: FromRow> Deref for Rows<T> {
 
 /// A list received from a response
 #[derive(Debug, PartialEq, Clone)]
-pub struct RList<T: FromValue = Value>(Vec<T>);
+pub struct RList<T = Value>(Vec<T>);
 
 impl<T: FromValue> From<Vec<T>> for RList<T> {
     fn from(values: Vec<T>) -> Self {
